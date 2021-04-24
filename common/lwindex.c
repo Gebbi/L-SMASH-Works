@@ -2526,7 +2526,10 @@ static void create_index
     else
     {
         /* Check the active stream is DV in AVI Type-1 or not. */
-        if( adhp->dv_in_avi == 1 && format_ctx->streams[ adhp->stream_index ]->nb_index_entries == 0 )
+        int active_stream_nb_index_entries = 0;
+        unsigned int active_stream_index_entries_allocated_size = 0;
+        av_lsmash_get_index_entries(format_ctx->streams[adhp->stream_index], &active_stream_nb_index_entries, &active_stream_index_entries_allocated_size);
+        if( adhp->dv_in_avi == 1 && active_stream_nb_index_entries == 0 )
         {
             /* DV in AVI Type-1 */
             audio_sample_count = video_info ? MIN( video_sample_count, audio_sample_count ) : 0;
@@ -2571,10 +2574,13 @@ static void create_index
         {
             AVStream *stream = format_ctx->streams[stream_index];
             AVIndexEntry *temp = NULL;
+            int stream_nb_index_entries = 0;
+            unsigned int stream_index_entries_allocated_size = 0;
+            AVIndexEntry *stream_index_entries = av_lsmash_get_index_entries(stream, &stream_nb_index_entries, &stream_index_entries_allocated_size);
             if( stream->codecpar->codec_type == AVMEDIA_TYPE_VIDEO )
             {
                 unsigned int allocated_size = video_keyframe_count * sizeof(AVIndexEntry);
-                temp = (AVIndexEntry *)av_realloc( stream->index_entries, allocated_size );
+                temp = (AVIndexEntry *)av_realloc( stream_index_entries, allocated_size );
                 if( temp )
                 {
                     uint32_t i = 0;
@@ -2590,15 +2596,15 @@ static void create_index
                             temp[i].min_distance = 0;
                             ++i;
                         }
-                    stream->index_entries                = temp;
-                    stream->index_entries_allocated_size = allocated_size;
-                    stream->nb_index_entries             = i;
+                    av_lsmash_set_index_entries(stream, temp);
+                    av_lsmash_set_nb_index_entries(stream, i);
+                    av_lsmash_set_index_entries_allocated_size(stream, allocated_size);
                 }
             }
             else if( stream->codecpar->codec_type == AVMEDIA_TYPE_AUDIO )
             {
                 unsigned int allocated_size = audio_sample_count * sizeof(AVIndexEntry);
-                temp = (AVIndexEntry *)av_realloc( stream->index_entries, allocated_size );
+                temp = (AVIndexEntry *)av_realloc( stream_index_entries, allocated_size );
                 if( temp )
                 {
                     uint32_t i = 0;
@@ -2615,64 +2621,67 @@ static void create_index
                             ++i;
                         }
                     }
-                    stream->index_entries                = temp;
-                    stream->index_entries_allocated_size = allocated_size;
-                    stream->nb_index_entries             = i;
+                    av_lsmash_set_index_entries(stream, temp);
+                    av_lsmash_set_nb_index_entries(stream, i);
+                    av_lsmash_set_index_entries_allocated_size(stream, allocated_size);
                 }
             }
             if( !temp )
             {
                 /* Anyway clear the index entries. */
-                av_freep( &stream->index_entries );
-                stream->index_entries_allocated_size = 0;
-                stream->nb_index_entries             = 0;
+                av_lsmash_clear_index_entries(stream, 1);
+                av_lsmash_set_nb_index_entries(stream, 0);
+                av_lsmash_set_index_entries_allocated_size(stream, 0);
             }
         }
     }
     for( unsigned int stream_index = 0; stream_index < format_ctx->nb_streams; stream_index++ )
     {
         AVStream *stream = format_ctx->streams[stream_index];
+        int stream_nb_index_entries = 0;
+        unsigned int stream_index_entries_allocated_size = 0;
+        AVIndexEntry *stream_index_entries = av_lsmash_get_index_entries(stream, &stream_nb_index_entries, &stream_index_entries_allocated_size);
         if( stream->codecpar->codec_type == AVMEDIA_TYPE_VIDEO )
         {
-            print_index( index, "<StreamIndexEntries=%d,%d,%d>\n", stream_index, AVMEDIA_TYPE_VIDEO, stream->nb_index_entries );
+            print_index( index, "<StreamIndexEntries=%d,%d,%d>\n", stream_index, AVMEDIA_TYPE_VIDEO, stream_nb_index_entries );
             if( vdhp->stream_index != stream_index )
-                for( int i = 0; i < stream->nb_index_entries; i++ )
-                    write_av_index_entry( index, &stream->index_entries[i] );
-            else if( stream->nb_index_entries > 0 )
+                for( int i = 0; i < stream_nb_index_entries; i++ )
+                    write_av_index_entry( index, &stream_index_entries[i] );
+            else if( stream_nb_index_entries > 0 )
             {
-                vdhp->index_entries = (AVIndexEntry *)av_malloc( stream->index_entries_allocated_size );
+                vdhp->index_entries = (AVIndexEntry *)av_malloc( stream_index_entries_allocated_size );
                 if( !vdhp->index_entries )
                     goto fail_index;
-                for( int i = 0; i < stream->nb_index_entries; i++ )
+                for( int i = 0; i < stream_nb_index_entries; i++ )
                 {
-                    AVIndexEntry *ie = &stream->index_entries[i];
+                    AVIndexEntry *ie = &stream_index_entries[i];
                     vdhp->index_entries[i] = *ie;
                     write_av_index_entry( index, ie );
                 }
-                vdhp->index_entries_count = stream->nb_index_entries;
+                vdhp->index_entries_count = stream_nb_index_entries;
             }
             print_index( index, "</StreamIndexEntries>\n" );
         }
         else if( stream->codecpar->codec_type == AVMEDIA_TYPE_AUDIO && adhp->stream_index != -2 )
         {
-            print_index( index, "<StreamIndexEntries=%d,%d,%d>\n", stream_index, AVMEDIA_TYPE_AUDIO, stream->nb_index_entries );
+            print_index( index, "<StreamIndexEntries=%d,%d,%d>\n", stream_index, AVMEDIA_TYPE_AUDIO, stream_nb_index_entries );
             if( adhp->stream_index != stream_index )
-                for( int i = 0; i < stream->nb_index_entries; i++ )
-                    write_av_index_entry( index, &stream->index_entries[i] );
-            else if( stream->nb_index_entries > 0 )
+                for( int i = 0; i < stream_nb_index_entries; i++ )
+                    write_av_index_entry( index, &stream_index_entries[i] );
+            else if( stream_nb_index_entries > 0 )
             {
                 /* Audio stream in matroska container requires index_entries for seeking.
                  * This avoids for re-reading the file to create index_entries since the file will be closed once. */
-                adhp->index_entries = (AVIndexEntry *)av_malloc( stream->index_entries_allocated_size );
+                adhp->index_entries = (AVIndexEntry *)av_malloc( stream_index_entries_allocated_size );
                 if( !adhp->index_entries )
                     goto fail_index;
-                for( int i = 0; i < stream->nb_index_entries; i++ )
+                for( int i = 0; i < stream_nb_index_entries; i++ )
                 {
-                    AVIndexEntry *ie = &stream->index_entries[i];
+                    AVIndexEntry *ie = &stream_index_entries[i];
                     adhp->index_entries[i] = *ie;
                     write_av_index_entry( index, ie );
                 }
-                adhp->index_entries_count = stream->nb_index_entries;
+                adhp->index_entries_count = stream_nb_index_entries;
             }
             print_index( index, "</StreamIndexEntries>\n" );
         }
@@ -3429,10 +3438,10 @@ int lwlibav_import_av_index_entry
     if( dhp->index_entries )
     {
         AVStream *stream = dhp->format->streams[ dhp->stream_index ];
-        av_free( stream->index_entries );
-        stream->index_entries                = dhp->index_entries;
-        stream->nb_index_entries             = dhp->index_entries_count;
-        stream->index_entries_allocated_size = dhp->index_entries_count * sizeof(AVIndexEntry);
+        av_lsmash_clear_index_entries(stream, 0);
+        av_lsmash_set_index_entries(stream, dhp->index_entries);
+        av_lsmash_set_nb_index_entries(stream, dhp->index_entries_count);
+        av_lsmash_set_index_entries_allocated_size(stream, dhp->index_entries_count * sizeof(AVIndexEntry));
         dhp->index_entries       = NULL;
         dhp->index_entries_count = 0;
     }
